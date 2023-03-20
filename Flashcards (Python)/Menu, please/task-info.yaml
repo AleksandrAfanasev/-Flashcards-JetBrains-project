@@ -300,9 +300,9 @@ files:
 - name: animal_sounds.txt
   visible: true
   learner_created: true
-feedback_link: https://hyperskill.org/projects/127/stages/677/implement#comment
+feedback_link: https://hyperskill.org/learn/step/10810#comment
 status: Solved
 feedback:
   message: Congratulations!
   time: "Sat, 18 Mar 2023 21:44:55 UTC"
-record: -1
+record: 5

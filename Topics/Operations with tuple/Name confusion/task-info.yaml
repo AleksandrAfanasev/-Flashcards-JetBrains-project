@@ -1,0 +1,17 @@
+type: code
+files:
+- name: main.py
+  visible: true
+  text: |-
+    name = input()
+    surname = input()
+
+    name, surname = ...
+  learner_created: false
+feedback_link: https://hyperskill.org/learn/step/15515#comment
+status: Solved
+feedback:
+  message: <html>Correct solution</html>
+  time: "Sun, 19 Mar 2023 15:46:48 UTC"
+record: -1
+submission_language: python3

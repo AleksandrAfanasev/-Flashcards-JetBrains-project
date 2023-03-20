@@ -11,18 +11,25 @@ right_keyword = "correct"
 wrong_keyword = "wrong"
 goodbye_message = 'bye bye'
 filepath = "animal_sounds.txt"
+filepath_2 = "capitals.txt"
+filepath_3 = "states.txt"
+log_filepath = "log.txt"
 questions_number = 100
 
-menu = "Input the action (add, remove, import, export, ask, exit)"
-if os.path.exists(filepath):
-    os.remove(filepath)
+menu = "Input the action (add, remove, import, export, ask, exit, log, hardest card, reset stats)"
+
+filepaths = [filepath, filepath_2, filepath_3]
+
+for fp in filepaths:
+    if os.path.exists(fp):
+        os.remove(fp)
 
 class FlashcardsTest(StageTest):
 
     is_completed = False
 
     def generate(self) -> List[TestCase]:
-        answers = "Warsaw\n" * questions_number
+        answers = "Washington\n" * questions_number
         return [TestCase(stdin="exit", check_function=FlashcardsTest.check_menu),
                 TestCase(stdin=["add\ncat\nmeow",
                                 self.test_output_added_card,
@@ -41,13 +48,37 @@ class FlashcardsTest(StageTest):
                                 self.test_wrong_import,
                                 self.test_import,
                                 self.test_ask_2,
-                                self.test_correct_result]),
-                TestCase(stdin=["add\nCanada\nOttawa\n"
-                                "add\nJapan\nTokio\n"
+                                self.test_correct_result,
+                                self.test_log_saving,
+                                self.test_log]),
+                TestCase(stdin=["hardest card",
+                                self.test_zero_mistakes,
+                                "Canada\nOttawa\n"
+                                "add\nJapan\nTokyo\n"
                                 "add\nPoland\nWarsaw\n"
                                 "ask\n{}\n".format(questions_number) +
-                                answers.strip(),
-                                self.test_randomness])]
+                                answers + "hardest card",
+                                self.test_randomness,
+                                self.test_hardest_after_import,
+                                self.test_reset,
+                                self.test_hardest_after_reset]),
+                TestCase(args=['--export_to={}'.format(filepath_3)],
+                         stdin='add\nTexas\nAustin\n'
+                                'add\nFlorida\nTallahassee\n'
+                                'add\nCalifornia\nSacramento\n'
+                                'ask\n3\nAustin\nAustin\nAustin\nexit',
+                         check_function=FlashcardsTest.check_sys_export,
+                         attach=filepath_3),
+                TestCase(args=['--import_from={}'.format(filepath_3)],
+                         stdin='remove\nTexas\nremove\nFlorida\nask\n2\nSacramento\nAustin\nexit',
+                         check_function=FlashcardsTest.check_sys_import),
+                TestCase(args=['--export_to={}'.format(filepath_3),
+                               '--import_from={}'.format(filepath_3)],
+                         stdin='ask\n1\nAustin\nexit',
+                         check_function=FlashcardsTest.check_sys_import_export,
+                         attach=filepath_3
+                         )
+                ]
 
     @staticmethod
     def check_menu(reply, attach):
@@ -212,8 +243,8 @@ class FlashcardsTest(StageTest):
         try:
             os.remove(filepath)
         except PermissionError:
-            return CheckResult.wrong("Impossible to remove the directory for tabs. "
-                                     "Perhaps you haven't closed some file?")
+            return CheckResult.wrong("Impossible to remove the file with the exported cards. "
+                                     "Perhaps you haven't closed this file?")
         except FileNotFoundError:
             return CheckResult.wrong("A file from which the cards should have been imported is not found. "
                                      "Make sure you did not delete the file after importing the cards.")
@@ -236,12 +267,51 @@ class FlashcardsTest(StageTest):
             return CheckResult.wrong("After asking the required number of definitions, "
                                      "your program should suggest the user to choose an action again. "
                                      "Use the standard menu \"{0}\" for that.".format(menu))
+        return "log"
+
+    def test_log_saving(self, reply):
+        if "file" not in reply.lower():
+            return CheckResult.wrong("When the user wants to save the log, the program should ask for "
+                                     "the name of the file where log should be saved.")
+        return log_filepath
+
+    def test_log(self, reply):
+        if not os.path.exists(log_filepath):
+            return CheckResult.wrong("The file with the log has not been found. "
+                                     "Make sure that you correctly saved the log file.")
+        if "log has been saved" not in reply.lower():
+            return CheckResult.wrong("When the log is saved, "
+                                     "the program should output a message \"The log has been saved.\"")
+        try:
+            os.remove(log_filepath)
+        except PermissionError:
+            return CheckResult.wrong("Impossible to remove the file with the log. "
+                                     "Perhaps you haven't closed this file?")
         self.is_completed = True
         return "exit"
 
+    def test_zero_mistakes(self, reply):
+        if 'no cards with errors' not in reply:
+            return CheckResult.wrong("The user ask to output the hardest card. Since no questions were asked yet, "
+                                     "the output \"There are no cards with errors.\" was expected. \n"
+                                     "However, it was not found. \n"
+                                     "Make sure your program correctly counts the number of mistakes that were made.")
+        return "add"
+
     def test_randomness(self, reply):
         reply = reply.lower()
-        questions_found = reply.count("print the definition of")
+        quiz_start_index = reply.find("print the definition of")
+        reply = reply[quiz_start_index:]
+
+        if "the hardest card is" not in reply or "errors" not in reply or "answering it" not in reply:
+            return CheckResult.wrong("The line naming the hardest card and stating the number of mistakes "
+                                     "made for this card was expected in the output of your program.\n"
+                                     "However, it was not found. Make sure you use the correct formatting of your output.")
+
+        quiz_end_index = reply.find("the hardest card is")
+        quiz = reply[:quiz_end_index]
+
+        questions_found = quiz.count("print the definition of")
         if questions_found != questions_number:
             return CheckResult.wrong("The program did not ask the user "
                                      "for the definition of a card for the required number of times.\n"
@@ -249,9 +319,9 @@ class FlashcardsTest(StageTest):
                                      "Also make sure that it is able to ask definitions more than once:\n"
                                      "for example, even if there are only 3 cards added, your program still "
                                      "should be able to ask the user for 100 times.")
-        japan_asked_n = reply.count("japan")
-        canada_asked_n = reply.count("canada")
-        poland_asked_n = reply.count("poland")
+        japan_asked_n = quiz.count("japan")
+        canada_asked_n = quiz.count("canada")
+        poland_asked_n = quiz.count("poland")
         minimum_asked = questions_number // 6
 
         if japan_asked_n < minimum_asked or canada_asked_n < minimum_asked or poland_asked_n < minimum_asked:
@@ -259,17 +329,144 @@ class FlashcardsTest(StageTest):
                                      "Make sure your program uses the random module to choose which definition "
                                      "it'll ask the user to give.\n"
                                      "If you're sure that you choose the cards randomly, try to rerun the tests.")
+
+        asked_n = {'japan': japan_asked_n, 'canada': canada_asked_n, 'poland': poland_asked_n}
+        sorted_keys = sorted(asked_n.keys(), key=lambda x:asked_n[x])
+        n_wrong = asked_n[sorted_keys[-1]]
+        max_wrong = [key for key in asked_n.keys() if asked_n[key] == n_wrong]
+
+        hardest_card_line = reply[reply.find("the hardest card is"):reply.find("answering it")]
+        if str(n_wrong) not in hardest_card_line:
+            return CheckResult.wrong("Seems like your program incorrectly calculated "
+                                     "the number of errors for the hardest card.")
+
+        if not any(card_name in hardest_card_line for card_name in max_wrong):
+            return CheckResult.wrong("Seems like your program incorrectly identified the card with "
+                                     "the maximum number of errors.")
+
+        return "export\n{0}\nimport\n{0}\nhardest card".format(filepath_2)
+
+    def test_hardest_after_import(self, reply):
+        try:
+            os.remove(filepath_2)
+        except PermissionError:
+            return CheckResult.wrong("Impossible to remove the file with the exported cards. "
+                                     "Perhaps you haven't closed this file?")
+        except FileNotFoundError:
+            return CheckResult.wrong("A file from which the cards should have been imported is not found. "
+                                     "Make sure you did not delete the file after importing the cards.")
+
+        reply = reply.lower()
+        if "the hardest card is" not in reply or "errors" not in reply or "answering it" not in reply:
+            return CheckResult.wrong("The line naming the hardest card and stating the number of mistakes "
+                                     "made for this card was expected in the output of your program.\n"
+                                     "However, it was not found. \n"
+                                     "Make sure that your program saves the number of mistakes for each card while exporting them,\n"
+                                     "and loads the cards and the number of mistakes for them correctly during the import.")
+        return "reset stats"
+
+    def test_reset(self, reply):
+        if "have been reset" not in reply.lower():
+            return CheckResult.wrong("The line \"Card statistics have been reset.\" was expected in the output "
+                                     "after the user entered \"reset stats\", but it was not found there.")
+        return "hardest card"
+
+    def test_hardest_after_reset(self, reply):
+        if "no cards with errors" not in reply.lower():
+            return CheckResult.wrong("After the reset of stats, "
+                                     "the line \"There are no cards with errors.\" is expected\n"
+                                     "when the program is asked about the hardest card.\n"
+                                     "However, your program does not seem to respond to this command correctly.")
         self.is_completed = True
         return "exit"
 
+    @staticmethod
+    def check_sys_export(reply, attach):
+        if "cards have been saved" not in reply.lower():
+            return CheckResult.wrong("The user has provided the --export_to command-line argument. \n"
+                                     "So, after the user inputs the command \"exit\", \n"
+                                     "your program should save the cards to the file specified in the command-line argument\n."
+                                     "After that, a message about the number of cards that have been saved should be printed by your program.\n"
+                                     "However, this message was not found.")
+        if "3 cards have been saved" not in reply.lower():
+            return CheckResult.wrong("Seems like your program incorrectly printed the number of cards "
+                                     "exported to file after \"exit\" command.")
+        if not os.path.exists(attach):
+            return CheckResult.wrong("The user has provided the --export_to command-line argument. \n"
+                                     "However, the file where the cards should have been exported after \"exit\" was not found. "
+                                     "Make sure you named the file with exported cards "
+                                     "as was required in --export_to command-line argument.")
+
+        return CheckResult.correct()
+
+    @staticmethod
+    def check_sys_import(reply, attach):
+        reply = reply.lower()
+        if "cards have been loaded" not in reply:
+            return CheckResult.wrong("The user has provided the --import_from command-line argument. \n"
+                                     "So, in the beginning of the game, \n"
+                                     "your program should load the cards from the file specified in the command-line argument\n."
+                                     "After that, a message about the number of cards that have been loaded should be printed by your program.\n"
+                                     "However, this message was not found.")
+        if "3 cards have been loaded" not in reply:
+            return CheckResult.wrong("Seems like your program incorrectly printed the number of cards "
+                                     "imported from the file in the beginning of the game.")
+        if reply.count("has been removed") != 2:
+            return CheckResult.wrong("Your program was asked to remove several existing cards, \n"
+                                     "however, it seems that it did not do it, \n"
+                                     "or did not output the message \"The card has been removed.\"")
+        if right_keyword not in reply:
+            return CheckResult.wrong("The user gave a correct answer, "
+                                     "but your program did not output the word \"{}\".".format(right_keyword))
+        if wrong_keyword not in reply:
+            return CheckResult.wrong("The user gave a wrong answer, "
+                                     "but your program did not output the word \"{}\".".format(wrong_keyword))
+
+        return CheckResult.correct()
+
+    @staticmethod
+    def check_sys_import_export(reply, attach):
+        reply = reply.lower()
+        if "cards have been loaded" not in reply:
+            return CheckResult.wrong("The user has provided the --import_from command-line argument. \n"
+                                     "So, in the beginning of the game, \n"
+                                     "your program should load the cards from the file specified in the command-line argument\n."
+                                     "After that, a message about the number of cards that have been loaded should be printed by your program.\n"
+                                     "However, this message was not found.")
+        if "3 cards have been loaded" not in reply:
+            return CheckResult.wrong("Seems like your program incorrectly printed the number of cards "
+                                     "imported from the file in the beginning of the game.")
+
+        if right_keyword not in reply and (wrong_keyword not in reply and "but your definition is correct for"):
+            return CheckResult.wrong("Your program did not respond correctly to the user's answer on the question.\n"
+                                     "Make sure you've imported cards from the file specified in the --import_from command-line argument.")
+        if "cards have been saved" not in reply.lower():
+            return CheckResult.wrong("The user has provided the --export_to command-line argument. \n"
+                                     "So, after the user inputs the command \"exit\", \n"
+                                     "your program should save the cards to the file specified in the command-line argument\n."
+                                     "After that, a message about the number of cards that have been saved should be printed by your program.\n"
+                                     "However, this message was not found.")
+        if "3 cards have been saved" not in reply.lower():
+            return CheckResult.wrong("Seems like your program incorrectly printed the number of cards "
+                                     "exported to file after \"exit\" command.")
+        if not os.path.exists(attach):
+            return CheckResult.wrong("The user has provided the --export_to command-line argument. \n"
+                                     "However, the file where the cards should have been exported after \"exit\" was not found. "
+                                     "Make sure you named the file with exported cards "
+                                     "as was required in --export_to command-line argument.")
+        try:
+            os.remove(attach)
+        except PermissionError:
+            return CheckResult.wrong("Impossible to remove the file with the exported cards. "
+                                     "Perhaps you haven't closed this file?")
+        return CheckResult.correct()
 
     def check(self, reply, attach):
         if self.is_completed:
             self.is_completed = False
             return CheckResult.correct()
         else:
-            return CheckResult.wrong('Your program doesn\'t read all inputs!')
-
+            return CheckResult.wrong('Your program did not read all inputs!')
 
 
 if __name__ == "__main__":
